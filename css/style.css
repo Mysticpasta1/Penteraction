@@ -1,0 +1,666 @@
+/* ============================================================
+   Penteraction - Sliced Reality
+   Dark, minimal, wireframe + glow. Calm, cerebral, slightly alien.
+   ============================================================ */
+
+:root {
+  --bg:            #0d0d0f;
+  --bg-2:          #111116;
+  --bg-panel:      rgba(14, 15, 20, 0.72);
+  --line:          rgba(150, 200, 230, 0.14);
+  --line-strong:   rgba(170, 220, 255, 0.30);
+  --text:          #cfe3ee;
+  --text-dim:      #6d8091;
+  --glow-cyan:     #35e0ff;
+  --glow-magenta:  #ff4fd8;
+  --glow-amber:    #ffb03a;
+  --glow-lime:     #8cff5a;
+  --glow-violet:   #9d6bff;
+  --radius:        3px;
+  --font: "SF Mono", "JetBrains Mono", "Cascadia Mono", Consolas, "Liberation Mono", monospace;
+}
+
+* { box-sizing: border-box; margin: 0; padding: 0; }
+
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--font);
+  font-size: 15px;
+  letter-spacing: 0.06em;
+  -webkit-font-smoothing: antialiased;
+}
+
+body::before {
+  /* faint scanline / vignette veil */
+  content: "";
+  position: fixed;
+  inset: 0;
+  pointer-events: none;
+  z-index: 40;
+  background:
+    radial-gradient(ellipse at 50% 45%, transparent 40%, rgba(0,0,0,0.55) 100%),
+    repeating-linear-gradient(to bottom,
+      rgba(255,255,255,0.012) 0 1px,
+      transparent 1px 3px);
+}
+
+#app { position: fixed; inset: 0; }
+
+#stage {
+  position: absolute; inset: 0; width: 100%; height: 100%; display: block;
+  cursor: grab;          /* left-drag orbits the camera */
+  touch-action: none;
+}
+#stage:active { cursor: grabbing; }
+
+/* No game view behind a menu: hide the canvas and every HUD panel, so the
+   overlay is the only thing on screen while the menu is up. */
+body.menu-up #stage,
+body.menu-up #hud { visibility: hidden; }
+body.menu-up #stage { cursor: default; }
+
+/* a toast belongs to the page it was raised on, never the menu */
+#toast.suppressed { display: none; }
+
+/* ============================ HUD ============================ */
+
+#hud {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 20;
+}
+
+.panel {
+  position: absolute;
+  background: var(--bg-panel);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 12px 14px;
+  backdrop-filter: blur(6px);
+  box-shadow: 0 0 0 1px rgba(0,0,0,0.5), 0 12px 40px rgba(0,0,0,0.55);
+}
+
+#hud-left  { top: 18px; left: 18px; min-width: 232px; }
+#hud-right { top: 18px; right: 18px; width: 420px; }
+
+.hud-title {
+  font-size: 11px;
+  letter-spacing: 0.34em;
+  color: var(--glow-cyan);
+  text-shadow: 0 0 12px rgba(53, 224, 255, 0.55);
+  margin-bottom: 10px;
+}
+.hud-title.small { font-size: 11px; letter-spacing: 0.22em; color: var(--text-dim); text-shadow: none; }
+.hud-title.gap { margin-top: 14px; }
+
+.hud-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 14px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(150,200,230,0.06);
+}
+.hud-row:last-child { border-bottom: none; }
+
+.hud-row .label { color: var(--text-dim); font-size: 11px; letter-spacing: 0.16em; }
+.hud-row .value { color: var(--text); font-size: 14px; }
+.hud-row .value.coords { color: var(--glow-cyan); text-shadow: 0 0 10px rgba(53,224,255,0.4); }
+
+.hint { color: var(--text-dim); font-size: 11px; letter-spacing: 0.06em; margin-top: 8px; }
+
+kbd {
+  display: inline-block;
+  min-width: 16px;
+  padding: 2px 5px;
+  margin: 0 1px;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 2px;
+  background: rgba(255,255,255,0.03);
+  color: var(--text);
+  font: inherit;
+  font-size: 11px;
+  text-align: center;
+}
+
+/* ---- signature swatch ---- */
+.swatch {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.02);
+}
+.swatch .glyph { font-size: 20px; line-height: 1; filter: drop-shadow(0 0 8px currentColor); }
+.swatch .swatch-name { font-size: 15px; letter-spacing: 0.16em; }
+
+#minimap {
+  display: block;
+  width: 100%;
+  height: auto;
+  margin-top: 4px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: #0a0a0c;
+}
+
+/* ---- toast ---- */
+#toast {
+  position: absolute;
+  top: 96px;
+  left: 50%;
+  transform: translateX(-50%) translateY(-6px);
+  padding: 7px 18px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  background: rgba(12,13,18,0.92);
+  color: var(--text);
+  font-size: 13px;
+  letter-spacing: 0.16em;
+  opacity: 0;
+  transition: opacity 0.22s ease, transform 0.22s ease;
+  white-space: nowrap;
+}
+#toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+#toast.good { color: var(--glow-lime); border-color: rgba(140,255,90,0.35); box-shadow: 0 0 26px rgba(140,255,90,0.15); }
+#toast.bad  { color: var(--glow-magenta); border-color: rgba(255,79,216,0.35); box-shadow: 0 0 26px rgba(255,79,216,0.15); }
+#toast.axis { color: var(--glow-violet); border-color: rgba(157,107,255,0.35); box-shadow: 0 0 26px rgba(157,107,255,0.15); }
+
+/* ---- control legend ---- */
+#controls {
+  position: relative;          /* .panel is absolute - keep it in the flex column */
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 6px 14px;
+  font-size: 11.5px;
+  letter-spacing: 0.06em;
+  color: var(--text-dim);
+  padding: 8px 16px;
+  max-width: min(96vw, 1560px);
+}
+
+/* ---- button bar ---- */
+/* ---- bottom stack: action buttons above the key legend, never overlapping ---- */
+#bottomstack {
+  position: absolute;
+  bottom: 10px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 25;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 8px;
+  max-width: min(96vw, 1560px);
+  pointer-events: auto;        /* the HUD is click-through; these are not */
+}
+
+/* your current room, in a compact strip above the buttons.
+   .panel is absolutely positioned for the HUD, so it must be put back in flow here */
+#roomtag {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 7px 16px;
+  font-size: 14px;
+  letter-spacing: 0.1em;
+  border-color: rgba(53,224,255,0.3);
+  background: rgba(8,9,13,0.78);
+}
+#roomtag b { color: var(--glow-cyan); font-weight: 600; }
+#roomtag .dot { color: var(--text-dim); }
+#roomtag .dim { color: var(--text-dim); letter-spacing: 0.06em; }
+
+#buttonbar {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: center;
+  gap: 8px;
+}
+#buttonbar button {
+  font: inherit;
+  font-size: 12px;
+  letter-spacing: 0.14em;
+  color: var(--text);
+  background: rgba(14,15,20,0.85);
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius);
+  padding: 9px 14px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+#buttonbar button:hover {
+  color: var(--glow-cyan);
+  border-color: rgba(53,224,255,0.4);
+  box-shadow: 0 0 18px rgba(53,224,255,0.14);
+}
+#buttonbar button.on { color: var(--glow-cyan); border-color: rgba(53,224,255,0.45); }
+
+/* ====================== FULLSCREEN LATTICE MAP ====================== */
+
+#fullmap {
+  position: absolute;
+  inset: 0;
+  z-index: 45;
+  display: none;
+  background:
+    radial-gradient(ellipse at 50% 50%, rgba(11,12,17,0.975), rgba(4,5,7,0.995));
+  backdrop-filter: blur(6px);
+}
+#fullmap.show { display: block; }
+#fullmap.show canvas { animation: fade 0.2s ease both; }
+#fullmap canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+
+/* The head and foot sit in the corners and must never wrap into a tall block
+   that pushes the map grid off screen, so both are single-line and clipped. */
+.fullmap-head {
+  position: absolute;
+  top: 22px;
+  left: 32px;
+  right: 32px;
+  pointer-events: none;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+}
+.fullmap-head .hud-title { font-size: 22px; letter-spacing: 0.3em; margin-bottom: 8px; }
+.fullmap-sub {
+  font-size: 13.5px;
+  line-height: 1.7;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+  max-width: 100%;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.fullmap-sub kbd { font-size: 12px; }
+
+.fullmap-foot {
+  position: absolute;
+  bottom: 20px;
+  left: 32px;
+  right: 32px;
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 20px;
+  font-size: 13.5px;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+  pointer-events: none;
+  white-space: nowrap;
+}
+.fullmap-foot kbd { color: var(--glow-cyan); border-color: rgba(53,224,255,0.3); font-size: 12px; }
+#fullmap-stats {
+  color: var(--text);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.zoom-bar {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  margin-top: 10px;
+  pointer-events: auto;
+}
+.zoom-bar span {
+  min-width: 64px;
+  text-align: center;
+  font-size: 15px;
+  letter-spacing: 0.08em;
+  color: var(--glow-cyan);
+}
+.zoom-bar button {
+  font: inherit;
+  font-size: 16px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: rgba(14,15,20,0.8);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  min-width: 34px;
+  padding: 8px 10px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.zoom-bar button:hover {
+  color: var(--glow-cyan);
+  border-color: rgba(53,224,255,0.45);
+  box-shadow: 0 0 16px rgba(53,224,255,0.16);
+}
+
+body.fullmap-open #bottomstack { opacity: 0.12; pointer-events: none; }
+#bottomstack { transition: opacity 0.2s ease; }
+
+/* ==================== SYMBOL LEGEND ==================== */
+
+#legend {
+  top: 246px;
+  left: 18px;
+  width: 268px;
+}
+.symlist {
+  list-style: none;
+  display: grid;
+  gap: 7px;
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--text-dim);
+}
+/* every legend row is a fixed-height flex line, so a taller emoji cannot sit
+   higher or lower than the CSS-drawn symbols beside it */
+.symlist li {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 20px;
+  line-height: 20px;
+}
+.sym {
+  position: relative;
+  flex: 0 0 20px;
+  width: 20px;
+  height: 14px;
+  display: inline-block;
+}
+/* lock and key are inline SVG so they read as the real shape, not a CSS sketch */
+svg.sym {
+  height: 20px;
+  width: 20px;
+  flex-basis: 20px;
+  filter: drop-shadow(0 0 5px rgba(255,176,58,0.55));
+}
+/* seal: the real emoji, recolored violet. The glyph is painted to a canvas at
+   boot (see paintSealLegend) and set as a background image, because the
+   platform emoji font bakes in a white plate that cannot be styled away. */
+.sym.seal {
+  flex: 0 0 20px;
+  width: 20px;
+  height: 20px;
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 20px 20px;
+  color: transparent;
+  -webkit-text-fill-color: transparent;
+}
+/* wall: solid red bar */
+.sym.wall::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 6px;
+  border-top: 3px solid #ff4a4a; box-shadow: 0 0 8px rgba(255,74,74,0.7);
+}
+/* In colorblind mode a wall is drawn dashed, so the swatch has to dash too -
+   the legend should show the same symbol the lattice uses. */
+body.cb .sym.wall::before {
+  border-top-style: dashed; box-shadow: none;
+}
+/* blocked: red X */
+.sym.blocked::before, .sym.blocked::after {
+  content: ""; position: absolute; left: 3px; top: 0; width: 14px; height: 14px;
+  border-top: 2px solid #ff4a4a;
+}
+.sym.blocked::before { transform: rotate(45deg); }
+.sym.blocked::after { transform: rotate(-45deg); }
+/* gate: colored bar */
+.sym.gate::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 6px;
+  border-top: 3px solid #35e0ff; box-shadow: 0 0 8px rgba(53,224,255,0.7);
+}
+/* lock: bar with a keyhole */
+.sym.lock::before {
+  content: ""; position: absolute; left: 0; right: 0; top: 7px;
+  border-top: 3px solid #ffb03a; box-shadow: 0 0 8px rgba(255,176,58,0.7);
+}
+.sym.lock::after {
+  content: ""; position: absolute; left: 8px; top: 2px; width: 5px; height: 5px;
+  border: 2px solid #ffb03a; border-radius: 50%;
+}
+/* open step: cyan chevron */
+.sym.step::before {
+  content: ""; position: absolute; left: 5px; top: 1px; width: 9px; height: 9px;
+  border-top: 2px solid #78ebff; border-right: 2px solid #78ebff;
+  transform: rotate(-45deg);
+  filter: drop-shadow(0 0 5px rgba(53,224,255,0.8));
+}
+/* signature pad: cyan diamond */
+.sym.pad::before {
+  content: ""; position: absolute; left: 5px; top: 2px; width: 10px; height: 10px;
+  border: 2px solid #35e0ff; transform: rotate(45deg);
+  filter: drop-shadow(0 0 5px rgba(53,224,255,0.7));
+}
+/* key: amber ring + stem */
+.sym.key::before {
+  content: ""; position: absolute; left: 2px; top: 2px; width: 8px; height: 8px;
+  border: 2px solid #ffb03a; border-radius: 50%;
+}
+.sym.key::after {
+  content: ""; position: absolute; left: 10px; top: 9px; width: 9px; height: 2px;
+  background: #ffb03a; transform: rotate(40deg); transform-origin: left center;
+}
+
+/* ========================== OVERLAYS ========================== */
+
+.overlay-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(88vw, 980px);
+  max-height: 88vh;
+  padding: clamp(30px, 4.4vh, 58px) clamp(34px, 4vw, 70px);
+  text-align: left;
+  background:
+    linear-gradient(180deg, rgba(20,22,30,0.94), rgba(10,11,15,0.96));
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  box-shadow:
+    0 0 0 1px rgba(0,0,0,0.6),
+    0 0 60px rgba(53,224,255,0.07),
+    0 30px 80px rgba(0,0,0,0.7);
+}
+.overlay-card::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg, rgba(53,224,255,0.06), transparent 40%);
+}
+
+#overlay, #win {
+  position: absolute;
+  inset: 0;
+  z-index: 60;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  background: rgba(6,7,10,0.82);
+  backdrop-filter: blur(3px);
+}
+#overlay.show, #win.show { display: flex; animation: fade 0.35s ease both; }
+@keyframes fade { from { opacity: 0 } to { opacity: 1 } }
+
+.overlay-card h1 {
+  font-size: clamp(30px, 4.4vw, 60px);
+  font-weight: 400;
+  letter-spacing: 0.24em;
+  color: var(--glow-cyan);
+  text-shadow: 0 0 34px rgba(53,224,255,0.5);
+}
+.overlay-card h2 {
+  margin-top: 8px;
+  font-size: clamp(11px, 1.1vw, 15px);
+  font-weight: 400;
+  letter-spacing: 0.4em;
+  color: var(--text-dim);
+}
+.lede {
+  margin: clamp(18px, 2.6vh, 30px) 0 clamp(16px, 2.4vh, 26px);
+  max-width: 68ch;
+  font-size: clamp(12.5px, 1.15vw, 16px);
+  line-height: 1.95;
+  letter-spacing: 0.04em;
+  color: #9fb4c4;
+}
+#overlay .lede { font-size: clamp(11.5px, 0.98vw, 14px); margin-bottom: 14px; }
+.keylist {
+  list-style: none;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: clamp(7px, 1vh, 12px) 26px;
+  margin-bottom: clamp(22px, 3vh, 34px);
+}
+.keylist li { font-size: clamp(12.5px, 1.15vw, 16px); color: var(--text-dim); letter-spacing: 0.08em; }
+.keylist li kbd { color: var(--glow-cyan); border-color: rgba(53,224,255,0.3); font-size: clamp(10px, 0.95vw, 13px); padding: 2px 6px; }
+
+.overlay-card button {
+  font: inherit;
+  font-size: clamp(12px, 1.2vw, 16px);
+  letter-spacing: 0.24em;
+  color: #04121a;
+  background: linear-gradient(180deg, #7ceaff, var(--glow-cyan));
+  border: none;
+  border-radius: var(--radius);
+  padding: clamp(13px, 1.7vh, 18px) clamp(26px, 3vw, 42px);
+  cursor: pointer;
+  box-shadow: 0 0 30px rgba(53,224,255,0.35);
+  transition: transform 0.12s ease, box-shadow 0.12s ease;
+}
+.overlay-card button:hover { transform: translateY(-1px); box-shadow: 0 0 44px rgba(53,224,255,0.5); }
+
+/* long menus scroll inside the card; the action stays pinned at the bottom */
+.card-scroll {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  padding-right: 8px;
+}
+.card-foot {
+  flex: 0 0 auto;
+  padding-top: clamp(16px, 2.4vh, 26px);
+}
+#start-btn {
+  display: block;
+  width: 100%;
+}
+
+.tiny { margin-top: 16px; font-size: clamp(11px, 1vw, 13px); letter-spacing: 0.16em; color: #4d5c6b; }
+
+/* ============================ SETUP ============================ */
+
+.setup {
+  margin: 4px 0 20px;
+  padding: 16px 18px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(255,255,255,0.015);
+}
+.setup-row {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  margin-bottom: 12px;
+}
+.setup-row:last-of-type { margin-bottom: 0; }
+.setup-label {
+  flex: 0 0 140px;
+  font-size: 11px;
+  letter-spacing: 0.2em;
+  color: var(--text-dim);
+}
+.setup-grid { display: flex; gap: 8px; flex-wrap: wrap; }
+
+.stepper {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 3px 5px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: rgba(0,0,0,0.3);
+}
+.stepper.maxed { border-color: rgba(53,224,255,0.35); }
+/* an axis cannot go below 2, so say so the same way the maximum is shown */
+.stepper.minned { border-color: rgba(255,176,58,0.3); }
+.stepper.minned .stepper-val { color: var(--glow-amber, #ffb03a); }
+.stepper.maxed .stepper-val,
+.stepper.minned .stepper-val { font-weight: 600; }
+.stepper-axis { font-size: 11px; color: var(--text-dim); width: 12px; }
+.stepper-val { min-width: 24px; text-align: center; font-size: 14px; color: var(--glow-cyan); }
+.stepper button, .seg button {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  color: var(--text-dim);
+  background: rgba(255,255,255,0.03);
+  border: 1px solid var(--line);
+  border-radius: 2px;
+  padding: 5px 8px;
+  cursor: pointer;
+  transition: color 0.15s, border-color 0.15s, box-shadow 0.15s;
+}
+.stepper button:hover, .seg button:hover {
+  color: var(--glow-cyan);
+  border-color: rgba(53,224,255,0.4);
+}
+.seg { display: flex; gap: 6px; }
+.seg button.on {
+  color: #04121a;
+  background: linear-gradient(180deg, #7ceaff, var(--glow-cyan));
+  border-color: transparent;
+  box-shadow: 0 0 16px rgba(53,224,255,0.3);
+}
+
+.setup-blurb {
+  margin: -4px 0 14px;
+  font-size: 12px;
+  line-height: 1.8;
+  letter-spacing: 0.08em;
+  color: var(--text-dim);
+}
+.setup-note, .setup-progress {
+  font-size: 11.5px;
+  line-height: 1.8;
+  letter-spacing: 0.1em;
+  color: var(--text-dim);
+}
+
+/* which colors the gate count actually draws from */
+.gc-swatches {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  margin-left: 10px;
+}
+.gc-swatches i {
+  width: 11px;
+  height: 11px;
+  border-radius: 2px;
+  box-shadow: 0 0 8px currentColor;
+}
+
+.setup-note { margin-top: 12px; }
+.setup-note b { color: var(--text); font-weight: 400; }
+.setup-progress { color: #55697a; }
+
+.btn-row { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+.overlay-card button.ghost {
+  color: var(--text-dim);
+  background: transparent;
+  border: 1px solid var(--line-strong);
+  box-shadow: none;
+}
+.overlay-card button.ghost:hover { color: var(--glow-cyan); box-shadow: none; border-color: rgba(53,224,255,0.45); }
+
+/* colorblind mode: extra pattern hints in HUD */
+body.cb .swatch { border-style: dashed; }
